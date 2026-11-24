@@ -8,17 +8,20 @@
 #   CTXFORGE_HOME        归档数据目录（默认 ~/.ctxforge）
 #   CTXFORGE_BUDGET      回注预算（默认 600）
 #
-# 默认安全形态：maxTokens=0（不干预生成）、outputGuard=false（保留原生流式，不截断）。
+# 默认安全形态：maxTokens=0（不干预生成）、outputGuard=true（仅流式事后去套话/限行/限字，零拦截）。
     - id: ctx-forge-bundle
       name: ctx-forge
       config:
         # archive: 会话落盘归档（正文外置 full.md + 锚定摘要），供 ctx-forge get 可逆调阅
         archive: true
-        # FIX: outputGuard 默认关闭——不再缓冲整段回复、不截断成 3 行、不破坏原生流式。
-        outputGuard: false
+        # 极致精简（真正省 token）：生成层硬限 + 思考层压低 + 流式实时截断。
+        # 省 token 靠"让它生不出来"，不靠"生完再重写"（重写=生成两遍=负资产）。
+        outputGuard: true          # 流式实时截断（不缓冲、不重写、不回注原因）
+        maxTokens: 2048           # 生成层硬上限：映射 API max_tokens，物理上无法超生成
+        reasoningEffort: minimal  # 思考层：仅对支持该档位的模型生效，不支持则不动
         # 空间护栏：最多保留 30 个会话归档，超出自动删除最旧的。
         retentionSessions: 30
         maxLines: 3
-        maxChars: 600
-        # maxTokens: 生成层硬限制默认关闭；想实打实省 output 时设 >0（如 4096），env CTXFORGE_MAX_TOKENS 可覆盖
-        maxTokens: 0
+        maxChars: 40
+        # 覆盖方式：env CTXFORGE_MAX_TOKENS / CTXFORGE_REASONING_EFFORT；
+        # 想放宽：maxTokens 调大或设 0 关闭，reasoningEffort 调 high，outputGuard 设 false。
