@@ -1,73 +1,72 @@
 # @nathan-adk/ctx-forge-dsh
 
-零常驻注入、可逆的上下文锻造器 —— **DeepSeek Harness (DSH) 专用版**。
+零常驻注入、可逆的上下文锻造器 —— **DeepSeek Harness（DSH）专用版**，以真正节省 token 为目标。
 
-把会话正文完整落盘，上下文里只保留四字段锚定摘要（目标/决定/事实/未决）+ 极简句柄，需要时用 `ctx-forge get` 按需调阅。压缩是确定性的、可复算，正文永不删除，可逆无丢失。
+## 省 token 的成本账（设计核心）
 
-## 设计目标
+很多人以为"拦住长回答让它重写"能省 token —— **错了，那是负资产**：
 
-- **每轮注入成本 = 0**：不往上下文塞任何规则文本，不做逐轮 prompt 注入。
-- **极致压缩**：正文外置 + 四字段锚定摘要 + 极简句柄，深度锻造档可到 95%+。
-- **本地空间有上限**：默认只保留最近 30 个会话归档，超出自动清理最旧的，不会无限膨胀。
-- **默认不干预输出**：`outputGuard` 默认关闭，保留原生流式，不截断、不切残句。
+| 手段 | 真正省 output token? | 说明 |
+|---|---|---|
+| Stop 拦截 → 重写 | ❌ 更费 | 长回答已生成计费 + 违规原因回注 + 重写再生成一遍 = 生成两遍 |
+| 生成后裁剪 | ❌ | token 已经生成，裁剪只省呈现和下一轮上下文，不退款 |
+| **生成层硬限制 maxTokens** | ✅ | 映射到底层 API `max_tokens`，模型物理上无法超生成 |
+| **压低 reasoningEffort** | ✅ | 从源头减少思考 token |
+
+所以本版**砍掉了重写逻辑**，专注三件真正有效的事：
+
+1. **生成层硬限制**：`options.maxTokens = min(原值, 2048)` —— 正文在生成源头被物理限长。
+2. **思考层压低**：`options.reasoningEffort = minimal`（仅对明确支持该档位的模型生效，不支持则不动，避免报错）。
+3. **流式实时截断**：chunk 到达即计数，超 `maxLines`/`maxChars` 立即停读上游并掐断，**不缓冲整段、不重写、不回注任何违规原因**。
+
+> 诚实边界：思考无法完全消失（模型需要它规划工具调用），只能压到最低档；流式截断是在生成后掐尾，真正省 token 靠前两层。需要复杂推理时可把 `reasoningEffort` 调 `high`、`maxTokens` 调大或设 0 关闭。
+
+## 上下文压缩（可逆）
+
+正文完整落盘，上下文只留四字段锚定摘要（目标/决定/事实/未决）+ 极简句柄，需要时 `ctx-forge get` 按需调阅。压缩确定性可复算，正文永不删除。
+
+- 每轮注入成本 = 0。
+- `retentionSessions: 30` 空间护栏：只留最近 30 个会话归档，本地占用有上限。
 
 ## 安装
 
 ```sh
-# 在你的 DSH profile 中安装（二选一）
 dsh plugin add @nathan-adk/ctx-forge-dsh
-# 或在插件市场搜索 ctx-forge-dsh
+# 或在 DSH 插件市场搜索 ctx-forge-dsh
 ```
 
-安装后 bundle 会自动插入 `ctx-forge-bundle` 插件行并激活。
-
-## 配置
-
-在 profile 的 `cordis.patch.yml` 中可以覆盖：
+## 配置（cordis.patch.yml）
 
 ```yaml
 - id: ctx-forge-bundle
   config:
-    archive: true          # 是否归档正文
-    budget: 600            # 回注预算（token）
-    outputGuard: false     # 默认关闭；true = 流式事后规范化（去套话/限行/限字）
-    maxLines: 3            # outputGuard 开启时的行数上限
-    maxChars: 600          # outputGuard 开启时的字数上限
-    retentionSessions: 30  # 最多保留多少个会话归档
-    maxTokens: 0           # 生成层硬上限；0=关闭，>0 映射到底层 API max_tokens
+    archive: true
+    outputGuard: true          # 流式实时截断（不缓冲/不重写/不回注）
+    maxTokens: 2048           # 生成层硬上限；0=关闭
+    reasoningEffort: minimal  # 思考层；模型不支持时自动不动
+    maxLines: 3
+    maxChars: 40
+    retentionSessions: 30
 ```
 
-环境变量（优先级高于配置）：
-- `CTXFORGE_HOME` — 归档目录，默认 `~/.ctxforge`（跨平台通用，不会写到程序目录）
-- `CTXFORGE_BUDGET` — 回注预算
-- `CTXFORGE_MAX_TOKENS` — 生成层硬上限
+环境变量（优先级更高）：`CTXFORGE_HOME`（归档目录，默认 `~/.ctxforge`）、`CTXFORGE_MAX_TOKENS`、`CTXFORGE_REASONING_EFFORT`。
+
+放宽开关：`maxTokens` 调大/设 0、`reasoningEffort: high`、`outputGuard: false`。
 
 ## 命令
 
 ```sh
-ctx-forge ingest <文件|-> --session-key <键>       # 归档正文
-ctx-forge forge --session-key <键> --budget 600    # 锻造压缩
-ctx-forge deep --session-key <键> --level max      # 深度锻造（95%+）
-ctx-forge get F0003 --session-key <键>             # 按需调阅原文
-ctx-forge status / rm --session-key <键>           # 查看/删除归档
+ctx-forge ingest <文件|-> --session-key <键>
+ctx-forge forge --session-key <键> --budget 600
+ctx-forge deep --session-key <键> --level max
+ctx-forge get F0003 --session-key <键>
+ctx-forge status / rm --session-key <键>
 ```
-
-## 归档与空间
-
-- 默认目录 `~/.ctxforge`，包含 `sessions/`（正文 `full.md` + 块 `blocks.json` + 锚点 `anchors.json`）。
-- 单会话通常几十 KB 到几 MB；`retentionSessions` 护栏保证总量有上限。
-- 正文落盘不删；调阅才回注，未调阅的历史不占上下文。
-
-## 诚实边界
-
-- 锚定摘要是规则抽取，不是语义理解：能保留决定/数字/路径，不能替代模型级摘要。
-- 压缩的代价是历史不直接可见，需要显式 `get` 调阅。
-- `outputGuard` 关闭后输出风格完全由模型与系统提示决定；开启后是事后规范化，属于纠错而非事前预防。
 
 ## 测试
 
 ```sh
-npm test   # 48 项断言，全部通过
+npm test   # 48 项断言全部通过
 ```
 
 ## 许可
