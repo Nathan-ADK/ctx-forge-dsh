@@ -1,0 +1,51 @@
+{
+  "name": "@nathan-adk/ctx-forge-dsh",
+  "version": "1.0.0",
+  "description": "Zero-resident, reversible context forge for DeepSeek Harness: offloaded bodies + anchored 4-field summary + on-demand handles, with a hard local-space cap. DSH edition.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "context",
+    "compaction",
+    "token",
+    "memory",
+    "plugin",
+    "bundle"
+  ],
+  "license": "MIT",
+  "author": "Nathan-ADK",
+  "type": "commonjs",
+  "main": "lib/index.js",
+  "cordis": "./dsh/index.js",
+  "bin": {
+    "ctx-forge": "./bin/ctx-forge.js",
+    "cf": "./bin/ctx-forge.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "dsh/",
+    "test/",
+    "cordis.patch.yml",
+    "SKILL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "test": "node test/forge-test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nathan-ADK/ctx-forge-dsh.git"
+  },
+  "homepage": "https://github.com/Nathan-ADK/ctx-forge-dsh#readme",
+  "engines": {
+    "node": ">=18"
+  }
+}
