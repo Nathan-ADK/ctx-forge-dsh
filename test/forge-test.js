@@ -157,13 +157,18 @@ fs.writeFileSync(tfp,[
  JSON.stringify({type:'message',role:'assistant',content:[{text:'好的我来帮你查一下这个文件的内容'}]}),
  JSON.stringify({type:'message',role:'assistant',content:[{text:'根因：测试\n修复：完成'}]})
 ].join('\n'));
+const prevGate=process.env.CTXFORGE_GATE;
+// 显式 opt-in 才启用闸门（默认关闭，因为重写=生成两遍=负资产）。
+process.env.CTXFORGE_GATE='on';
+delete require.cache[require.resolve('../lib/hook.js')];
 const hookProc=require('../lib/hook.js');
 const prevHome=process.env.CTXFORGE_HOME;process.env.CTXFORGE_HOME=pp.join(wdir,'home');
 let captured='';const oldWrite=process.stdout.write;
 process.stdout.write=(s)=>{captured+=s;return true;};
 hookProc.stopGate({session_id:'pt',transcript_path:tfp});
 process.stdout.write=oldWrite;
-ok('过程长句中消息被拦', captured.includes('过程外显'));
+ok('过程长句中消息被拦（opt-in）', captured.includes('过程外显'));
 if(prevHome===undefined)delete process.env.CTXFORGE_HOME;else process.env.CTXFORGE_HOME=prevHome;
+if(prevGate===undefined)delete process.env.CTXFORGE_GATE;else process.env.CTXFORGE_GATE=prevGate;
 console.log(`\n[过程段] ${pass} PASS / ${fail} FAIL`);
 process.exitCode=fail?1:0;
