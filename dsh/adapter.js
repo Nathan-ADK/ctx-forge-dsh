@@ -16,7 +16,7 @@ const STATUS = path.join(HOME, 'dsh-status.json');
 
 function apply(ctx, config = {}) {
   // FIX: outputGuard 默认关闭——不再缓冲整段回复、不再截断成 3 行、不破坏原生流式。
-  const cfg = Object.assign({ archive: true, budget: 600, debug: false, outputGuard: false, maxLines: 3, maxChars: 600, maxTokens: 0, retentionSessions: 30 }, config);
+  const cfg = Object.assign({ archive: true, budget: 600, debug: false, outputGuard: true, maxLines: 3, maxChars: 40, maxTokens: 2048, reasoningEffort: 'minimal', retentionSessions: 30, streamCutoff: true }, config);
   const log = (m) => { try { if (cfg.debug) ctx.logger?.info('[ctx-forge] ' + m); } catch {} };
   const slotFor = (sid) => 'dsh_' + String(sid || 'latest').replace(/[^A-Za-z0-9_.\-\u4e00-\u9fff]/g, '_').slice(0, 60);
 
@@ -35,23 +35,36 @@ function apply(ctx, config = {}) {
     return payload;
   });
 
-  // FIX: 默认不再包裹 llm/stream——保证原生流式、不截断、不切残句。
-  // 只有当用户显式 outputGuard:true 时才启用事后规范化；即便开启也只做流式透传包裹。
-  if (cfg.outputGuard === true && stream) {
-    ctx.on('llm/stream', (options, next) => {
-      // 生成层硬限制：仅在 maxTokens>0 时生效，映射到底层 API 的 max_tokens。
-      try {
-        const mt = Number(process.env.CTXFORGE_MAX_TOKENS) || Number(cfg.maxTokens) || 0;
-        if (mt > 0 && options && typeof options === 'object') options.maxTokens = Math.min(options.maxTokens || mt, mt);
-      } catch (_) {}
-      let upstream = null;
-      try {
-        upstream = next();
-        if (!upstream || typeof upstream[Symbol.asyncIterator] !== 'function') return upstream;
+  // 三层极致精简：始终挂载 llm/stream，只做「让它生不出来」的省 token 操作。
+  // 成本账：拦截重写/生成后重生成 = 负资产（生成两遍）；生成层硬限 = 真正省。
+  ctx.on('llm/stream', (options, next) => {
+    // ① 生成层硬限制（真正省 output token）：映射到底层 API max_tokens，模型物理上无法超生成。
+    try {
+      const mt = Number(process.env.CTXFORGE_MAX_TOKENS) || Number(cfg.maxTokens) || 0;
+      if (mt > 0 && options && typeof options === 'object') options.maxTokens = Math.min(options.maxTokens || mt, mt);
+    } catch (_) {}
+    // ② 思考层（真正省 reasoning token）：仅当模型明确支持该档位才设置，
+    //    否则保留原值——给不支持的模型强设档位会抛 UNSUPPORTED_REASONING_EFFORT 导致请求失败。
+    try {
+      const eff = String(process.env.CTXFORGE_REASONING_EFFORT || cfg.reasoningEffort || '').toLowerCase();
+      if (eff && options && typeof options === 'object' && options.model) {
+        const levels = (options.model.reasoning && Array.isArray(options.model.supportedThinkingLevels))
+          ? options.model.supportedThinkingLevels
+          : (options.model.reasoning ? ['minimal','low','medium','high','xhigh','max','off'] : ['off']);
+        if (levels.includes(eff)) options.reasoningEffort = eff;
+      }
+    } catch (_) {}
+    let upstream = null;
+    try {
+      upstream = next();
+      if (!upstream || typeof upstream[Symbol.asyncIterator] !== 'function') return upstream;
+      // ③ 输出层：实时流式截断（不缓冲整段、不重写、不回注违规原因）。
+      if (cfg.outputGuard === true && stream) {
         return stream.guard(upstream, { enabled: true, maxLines: cfg.maxLines, maxChars: cfg.maxChars });
-      } catch (e) { log('stream guard failed, passthrough: ' + e.message); return upstream; }
-    });
-  }
+      }
+      return upstream;
+    } catch (e) { log('stream guard failed, passthrough: ' + e.message); return upstream; }
+  });
 
   // FIX: 删掉原 `ctx.inject(['sessions'])` 空回调（死代码，原样返回 child，什么也不做）。
   // 归档改为可由会话结束/压缩事件显式调用，或 CLI `ctx-forge ingest` 手动调用。
