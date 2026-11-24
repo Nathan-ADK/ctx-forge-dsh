@@ -1,0 +1,24 @@
+- insert:
+# ctx-forge —— 零常驻注入的上下文锻造器（DSH cordis bundle 声明）
+# DSH 按 dsh.bundle.patch 发现并加载本包；code 入口 = package.json main (lib/index.js) 的 {name,inject,apply}。
+# 行为全部零常驻：UserPromptSubmit/Stop/SessionStart 静默放行，只在 llm/stream waterfall 做功。
+#
+# 三个可调项（env 优先于 config）：
+#   CTXFORGE_MAX_TOKENS  生成层硬上限（0=关闭，物理上无法生成超限回复，实打实省 output token）
+#   CTXFORGE_HOME        归档数据目录（默认 ~/.ctxforge）
+#   CTXFORGE_BUDGET      回注预算（默认 600）
+#
+# 默认安全形态：maxTokens=0（不干预生成）、outputGuard=false（保留原生流式，不截断）。
+    - id: ctx-forge-bundle
+      name: ctx-forge
+      config:
+        # archive: 会话落盘归档（正文外置 full.md + 锚定摘要），供 ctx-forge get 可逆调阅
+        archive: true
+        # FIX: outputGuard 默认关闭——不再缓冲整段回复、不截断成 3 行、不破坏原生流式。
+        outputGuard: false
+        # 空间护栏：最多保留 30 个会话归档，超出自动删除最旧的。
+        retentionSessions: 30
+        maxLines: 3
+        maxChars: 600
+        # maxTokens: 生成层硬限制默认关闭；想实打实省 output 时设 >0（如 4096），env CTXFORGE_MAX_TOKENS 可覆盖
+        maxTokens: 0
