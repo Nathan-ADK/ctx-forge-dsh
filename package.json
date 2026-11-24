@@ -1,6 +1,6 @@
 {
   "name": "@nathan-adk/ctx-forge-dsh",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Zero-resident, reversible context forge for DeepSeek Harness: offloaded bodies + anchored 4-field summary + on-demand handles, with a hard local-space cap. DSH edition.",
   "keywords": [
     "deepseek-harness",
